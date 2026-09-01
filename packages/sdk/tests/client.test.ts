@@ -277,6 +277,21 @@ describe("TalosClient - Request/Response Behavior", () => {
         expect(apiError.path).toBe("/api/talos/1");
       }
     });
+
+    it("should include request ID from x-request-id header", async () => {
+      vi.mocked(fetch).mockResolvedValue({
+        ok: false,
+        status: 500,
+        headers: new Headers({ "x-request-id": "req-123" }),
+        text: async () => "Server Error",
+      } as Response);
+
+      const err = await client.getTalos("1").catch((e) => e);
+      expect(err).toBeInstanceOf(TalosAPIError);
+      const apiError = err as TalosAPIError;
+      expect(apiError.status).toBe(500);
+      expect(apiError.requestId).toBe("req-123");
+    });
   });
 
 it("should fetch one activity page with typed cursor response", async () => {
@@ -374,6 +389,17 @@ it("should fetch one activity page with typed cursor response", async () => {
       await expect(client.getTalos("1")).rejects.toThrow(SyntaxError);
     });
 
+    it("should handle invalid JSON in listTaloses response", async () => {
+      vi.mocked(fetch).mockResolvedValue({
+        ok: true,
+        json: async () => {
+          throw new SyntaxError("Unexpected token < in JSON");
+        },
+      } as unknown as Response);
+
+      await expect(client.listTaloses({ limit: 10 })).rejects.toThrow(SyntaxError);
+    });
+
     it("should handle non-JSON response when JSON expected", async () => {
       vi.mocked(fetch).mockResolvedValue({
         ok: true,
@@ -415,6 +441,12 @@ it("should fetch one activity page with typed cursor response", async () => {
       vi.mocked(fetch).mockRejectedValue(new Error("Network error"));
 
       await expect(client.getTalos("1")).rejects.toThrow("Network error");
+    });
+
+    it("should handle network error while listing taloses", async () => {
+      vi.mocked(fetch).mockRejectedValue(new Error("Network error"));
+
+      await expect(client.listTaloses({ limit: 10 })).rejects.toThrow("Network error");
     });
 
     it("should handle DNS resolution failure", async () => {
@@ -1096,6 +1128,18 @@ describe("Typed SDK Error Hierarchy", () => {
   });
 
   describe("Helpers", () => {
+    it("should export helpers without breaking TalosClient imports", async () => {
+      const sdk = await import("../src/index.js");
+      expect(sdk.TalosClient).toBeDefined();
+      expect(sdk.errorFromResponse).toBeTypeOf("function");
+      expect(sdk.classifyTransportError).toBeTypeOf("function");
+      expect(sdk.sanitizeBody).toBeTypeOf("function");
+      expect(sdk.redactSecrets).toBeTypeOf("function");
+      expect(sdk.parseRetryAfter).toBeTypeOf("function");
+      expect(sdk.parseX402Challenge).toBeTypeOf("function");
+      expect(sdk.TalosAPIError).toBeTypeOf("function");
+    });
+
     it("errorFromResponse produces correct subtype for status codes", () => {
       const cases: Array<[number, any]> = [
         [400, TalosValidationError],
