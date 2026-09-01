@@ -357,7 +357,7 @@ Error bodies are sanitized before being surfaced:
 - Parsed JSON is run through `redactSecrets`, which replaces common secret
   fields (`token`, `authorization`, `secret`, `api_key`, `password`,
   `signature`, etc.) with `[REDACTED]` recursively.
-- Non-JSON bodies are collapsed to a single line.
+- Non-JSON bodies are collected into a string.lapsed to a single line.
 - All bodies are truncated to {@link MAX_BODY_BYTES} (1024) with a
   `…[truncated]` marker.
 - Only a fixed set of response headers is preserved.
