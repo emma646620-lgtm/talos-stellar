@@ -43,4 +43,18 @@ export type {
   TalosEventStreamOptions,
   SeenStore,
 } from "./events.js";
+
+// Typed pagination helpers
+export interface TalosPage<T> {
+  data: T[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  total?: number;
+}
+
+export interface TalosPageParams {
+  limit?: number;
+  cursor?: string;
+}
+
 export * from "./pagination.js";
