@@ -17,6 +17,7 @@ import type {
   PurchaseServiceParams,
   CommerceJob,
   Wallet,
+  WriteOptions,
   LeaderboardEntry,
   Playbook,
   CreatePlaybookParams,
@@ -35,15 +36,18 @@ import {
   type RequestSigner,
   type SigningControllerOptions,
 } from "./signing.js";
-import { TalosAPIError } from "./errors.js";
+import { TalosAPIError, TalosPaymentError } from "./errors.js";
+export { TalosAPIError } from "./errors.js";
 export type {
+  PaginatedResponse,
   CursorPage,
   CursorRequestOptions,
   ActivityPage,
   ActivityPageOptions,
-  PaginatedResponse,
 } from "./types.js";
-export { TalosAPIError };
+export function isTalosAPIError(error: unknown): error is TalosAPIError {
+  return error instanceof TalosAPIError;
+}
 
 export interface RetryPolicyOptions {
   maxAttempts?: number;
@@ -55,13 +59,6 @@ export interface RetryPolicyOptions {
   random?: () => number;
 }
 
-export interface WriteOptions {
-  /** Idempotency key for safe retries. */
-  idempotencyKey?: string;
-  /** Abort signal. */
-  signal?: AbortSignal;
-}
-
 export interface TalosClientOptions {
   /** Base URL of the Talos API. Defaults to `https://talos-stellar.vercel.app`. */
   baseUrl?: string;
@@ -70,9 +67,7 @@ export interface TalosClientOptions {
   /** Opt-in request signer. Omitting it preserves the legacy wire format. */
   signer?: RequestSigner;
   signing?: SigningControllerOptions;
-  /** Retry policy for idempotent requests. */
   retryPolicy?: RetryPolicyOptions;
-  /** Custom fetch implementation for tests / middleware. */
   fetch?: typeof fetch;
 }
 
@@ -84,81 +79,6 @@ export interface TalosErrorEvent {
   attempt: number;
   durationMs: number;
 }
-
-/**
- * Type guard for normalized Talos API errors.
- */
-export function isTalosAPIError(error: unknown): error is TalosAPIError {
-  return error instanceof TalosAPIError;
-}
-
-/**
- * Returns the HTTP status of a Talos API error, or `undefined` if the value
- * is not a Talos API error.
- */
-export function getTalosErrorStatus(error: unknown): number | undefined {
-  return isTalosAPIError(error) ? error.status : undefined;
-}
-
-/**
- * Returns the request ID attached to a Talos API error, if available.
- */
-export function getTalosErrorRequestId(error: unknown): string | undefined {
-  return isTalosAPIError(error)
-    ? (error as TalosAPIError & { requestId?: string }).requestId
-    : undefined;
-}
-
-/**
- * Returns a human-readable message from any thrown value.
- */
-export function getTalosErrorMessage(error: unknown): string {
-  if (isTalosAPIError(error)) return error.message;
-  if (error instanceof Error) return error.message;
-  return String(error);
-}
-
-/**
- * Returns the items from a {@link CursorPage}.
- */
-export function getPageItems<T>(page: PaginatedResponse<T>): T[] {
-  return page.items ?? [];
-}
-
-/**
- * Returns the next cursor from a {@link CursorPage}, or `null` if there are no
- * more pages.
- */
-export function getPageNextCursor<T>(page: PaginatedResponse<T>): string | null {
-  return page.nextCursor ?? null;
-}
-
-/**
- * Returns whether a {@link CursorPage} has another page to load.
- */
-export function pageHasMore<T>(page: PaginatedResponse<T>): boolean {
-  return getPageNextCursor(page) != null;
-}
-
-/**
- * Async generator that yields every item across all pages fetched via `fetchPage`.
- * Follows `nextCursor` until it is `null`/`undefined`.
- */
-export async function* paginate<T>(
-  fetchPage: (cursor?: string) => Promise<PaginatedResponse<T>>,
-): AsyncGenerator<T> {
-  let cursor: string | undefined;
-  do {
-    const page = await fetchPage(cursor);
-    const items = page.items ?? [];
-    for (const item of items) {
-      yield item;
-    }
-    cursor = page.nextCursor ?? undefined;
-  } while (cursor);
-}
-
-
 
 /** Methods considered safe to retry without further confirmation from the caller. */
 const IDEMPOTENT_METHODS = new Set(["GET", "HEAD"]);
@@ -195,8 +115,9 @@ export class TalosClient {
   private baseUrl: string;
   private headers: Record<string, string>;
   private signer?: SigningController;
-  private retryPolicy: Required<RetryPolicyOptions>;
   private fetchOverride?: typeof fetch;
+  private retryPolicy: Required<RetryPolicyOptions>;
+  private chaosInjector?: { maybeInjectFault(fault: string): Promise<void> };
 
   constructor(options: TalosClientOptions = {}) {
     const normalizedRetryMethods = options.retryPolicy?.retryMethods?.map(
@@ -219,11 +140,11 @@ export class TalosClient {
       jitter: options.retryPolicy?.jitter ?? true,
       random: options.retryPolicy?.random ?? Math.random,
     };
+    this.fetchOverride = options.fetch;
     this.baseUrl = (
       options.baseUrl ?? "https://talos-stellar.vercel.app"
     ).replace(/\/$/, "");
     this.headers = { "Content-Type": "application/json" };
-    this.fetchOverride = options.fetch;
     if (options.apiKey) {
       this.headers["Authorization"] = `Bearer ${options.apiKey}`;
     }
@@ -346,45 +267,25 @@ export class TalosClient {
         "X-Talos-Signature": encodeSignature(signed.signature),
       });
     }
-    let res: Response;
-    try {
-      res = await this.resolveFetch()(url, {
-        ...requestInit,
-        headers,
-        signal,
-      });
-    } catch (cause) {
-      throw new TalosAPIError(
-        0,
-        `Network request failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-        path,
-      );
-    }
-    const text = await res.text();
-    let parsed: unknown;
-    if (text) {
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        if (!res.ok) {
-          parsed = text;
-        } else {
-          const requestId = res.headers.get("x-request-id") ?? undefined;
-          const error = new TalosAPIError(0, `Malformed JSON response: ${text}`, path);
-          (error as any).requestId = requestId;
-          throw error;
-        }
-      }
-    } else {
-      parsed = undefined;
-    }
+    const res = await this.resolveFetch()(url, {
+      ...init,
+      headers,
+    });
+    const body = await res.text();
+    const requestId = res.headers.get("x-request-id") ?? undefined;
     if (!res.ok) {
-      const requestId = res.headers.get("x-request-id") ?? undefined;
-      const error = new TalosAPIError(res.status, parsed, path);
-      (error as any).requestId = requestId;
-      throw error;
+      throw new TalosAPIError(res.status, body || res.statusText, path, {
+        requestId,
+      });
     }
-    return parsed as T;
+    if (!body) return undefined as T;
+    try {
+      return JSON.parse(body) as T;
+    } catch {
+      throw new TalosAPIError(res.status, "Malformed JSON response", path, {
+        requestId,
+      });
+    }
   }
 
   private async requestPage<T>(
@@ -520,13 +421,7 @@ export class TalosClient {
     params: PurchaseServiceParams,
     options?: WriteOptions,
   ): Promise<CommerceJob> {
-    return this.request(`/api/talos/${talosId}/purchase`, {
-      method: "POST",
-      body: JSON.stringify(params),
-      idempotencyKey: options?.idempotencyKey,
-      signal: options?.signal,
-    });
-  }urn this.request(`/api/talos/${talosId}/service`, {
+    return this.request(`/api/talos/${talosId}/service`, {
       method: "POST",
       body: JSON.stringify({ payload: params.payload }),
       headers: { "X-PAYMENT": params.paymentHeader },
@@ -557,9 +452,9 @@ export class TalosClient {
     const url = `${this.baseUrl}${path}`;
 
     if (this.chaosInjector) {
-      await this.chaosInjector.maybeInjectFault(FaultType.NETWORK_DELAY);
-      await this.chaosInjector.maybeInjectFault(FaultType.NETWORK_DROP);
-      await this.chaosInjector.maybeInjectFault(FaultType.API_TIMEOUT);
+      await this.chaosInjector.maybeInjectFault("network-delay");
+      await this.chaosInjector.maybeInjectFault("network-drop");
+      await this.chaosInjector.maybeInjectFault("api-timeout");
     }
 
     // 1. Try initial request
@@ -567,7 +462,7 @@ export class TalosClient {
       method: "POST",
       body: JSON.stringify({ payload }),
     });
-    res = await fetch(url, {
+    const res = await this.resolveFetch()(url, {
       method: "POST",
       headers: initialHeaders,
       body: JSON.stringify({ payload }),
@@ -620,11 +515,13 @@ export class TalosClient {
 
     // Non-402 responses — wrap them through the typed dispatch.
     if (!res.ok) {
+      const requestId = res.headers.get("x-request-id") ?? undefined;
       const body = await res.text();
       throw new TalosAPIError(
         res.status,
-        body,
+        body || res.statusText,
         `/api/talos/${talosId}/service`,
+        { requestId },
       );
     }
 
@@ -669,6 +566,7 @@ export class TalosClient {
       const [key, value] = part.split("=");
       challenge[key] = value.replace(/"/g, "");
     }
+    return challenge;
   }
 
   // ── Wallet & Payments ──────────────────────────────────────
@@ -690,6 +588,7 @@ export class TalosClient {
   async transfer(
     talosId: string,
     params: TransferParams,
+    options?: WriteOptions,
   ): Promise<TransferResponse> {
     return this.request(`/api/talos/${talosId}/transfer`, {
       method: "POST",
