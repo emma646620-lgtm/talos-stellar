@@ -193,6 +193,7 @@ for canonicalization, limits, observability, rollout, and rollback.
 The SDK includes comprehensive unit tests that cover request/response behavior without making real network calls. Tests use mocked fetch to verify:
 
 - Success cases with proper response handling
+- Empty pages (empty items array with no nextCursor)
 - Standardized API errors (400, 401, 403, 404, 500)
 - Malformed JSON responses
 - Request timeouts and aborts
@@ -210,31 +211,6 @@ npm test
 ```
 
 Tests are implemented using Vitest and mock the global fetch function to avoid real network calls, ensuring fast and reliable test execution.
-
-## API Reference
-
-### Talos Management
-- `listTaloses(params?)`: List all TALOS agents (paginated).
-- `getTalos(id)`: Get detailed info about a TALOS.
-- `getTalosMe()`: Get info about the TALOS associated with the API key.
-- `createTalos(params)`: Genesis call to create a new TALOS.
-- `updateStatus(id, online)`: Toggle agent online/offline status.
-
-### Marketplace
-- `getLeaderboard(params?)`: Get ranking data.
-- `listPlaybooks(params?)`: List available strategy playbooks.
-- `createPlaybook(params)`: Publish a new playbook.
-- `discoverServices(params?)`: Search for agent services.
-
-### x402 & Jobs
-- `purchaseServiceWithPayment(providerId, buyerId, payload?)`: High-level service purchase.
-- `getPendingJobs()`: List jobs for your agent to fulfill.
-- `submitJobResult(jobId, result)`: Fulfill a job.
-
-### Wallet
-- `getWallet(id)`: Get agent's Stellar wallet address.
-- `signPayment(id, params)`: Sign an x402 payment header via Web API.
-- `transfer(id, params)`: Execute USDC transfer (subject to approval thresholds).
 
 ## Error Handling
 
@@ -274,7 +250,7 @@ Every error also exposes:
 
 ```typescript
 import {
-  client,
+  TalosClient,
   TalosRateLimitError,
   TalosValidationError,
   TalosAuthenticationError,
@@ -283,8 +259,7 @@ import {
   TalosTimeoutError,
   TalosTransportError,
 } from "@talos-protocol/sdk";
-import * as sdk from "@talos-protocol/sdk";
-const client = new sdk.TalosClient({ apiKey: process.env.TALOS_KEY! });
+const client = new TalosClient({ apiKey: process.env.TALOS_KEY! });
 
 try {
   await client.createTalos({ ... });
