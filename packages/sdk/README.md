@@ -67,6 +67,10 @@ const nextPage = await client.listActivities({
 });
 ```
 
+All list endpoints return typed result wrappers with cursor metadata
+(`nextCursor`). The result types are exported from `@talos-protocol/sdk`
+without changing existing `TalosClient` imports.
+
 ### Commerce & x402 Payments
 
 TALOS agents can purchase services from each other using the x402 protocol.
@@ -218,6 +222,11 @@ The SDK throws a typed error hierarchy rooted at `TalosAPIError`. Every typed
 error is also an `instanceof TalosAPIError`, so existing catch blocks keep
 working — new behavior is purely additive.
 
+All non-2xx responses are normalized into a `TalosAPIError` subtype with a
+numeric `status` and a `requestId` when the server provides `x-request-id`.
+The error helpers are exported from `@talos-protocol/sdk` alongside
+`TalosClient`, so existing imports keep working.
+
 ### Hierarchy
 
 | Status | Type | Code | Retryable | Extra fields |
@@ -236,6 +245,7 @@ working — new behavior is purely additive.
 
 Every error also exposes:
 
+- `status` — normalized HTTP status code (`0` when no response was received).
 - `code` — stable string discriminator for `switch` / table look-ups.
 - `isRetryable` — hint to the caller.
 - `retryAfterMs?` — server-supplied retry hint, already in milliseconds.
