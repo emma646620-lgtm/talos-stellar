@@ -43,7 +43,4 @@ export type {
   TalosEventStreamOptions,
   SeenStore,
 } from "./events.js";
-// Pagination wrappers
-export interface TalosPage<T> { items: T[]; nextCursor: string | null; prevCursor: string | null; hasMore: boolean; total?: number; }
-export type TalosListResult<T> = TalosPage<T>;
-export function createEmptyPage<T>(): TalosPage<T> { return { items: [], nextCursor: null, prevCursor: null, hasMore: false }; }
+export * from "./pagination.js";
