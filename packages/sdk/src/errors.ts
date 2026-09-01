@@ -333,152 +333,6 @@ export class TalosAuthenticationError extends TalosAPIError {
   }
 }
 
-/**
- * 403 — authenticated but not permitted.
- */
-export class TalosForbiddenError extends TalosAPIError {
-  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
-    super(status, body, path, { ...options, code: "forbidden" });
-    this.name = "TalosForbiddenError";
-  }
-}
-
-/**
- * 404 — resource not found.
- */
-export class TalosNotFoundError extends TalosAPIError {
-  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
-    super(status, body, path, { ...options, code: "not_found_error" });
-    this.name = "TalosNotFoundError";
-  }
-}
-
-/**
- * 409 — conflict with current state.
- */
-export class TalosConflictError extends TalosAPIError {
-  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
-    super(status, body, path, { ...options, code: "conflict_error" });
-    this.name = "TalosConflictError";
-  }
-}
-
-/**
- * 402 — payment required / x402 challenge.
- */
-export class TalosPaymentError extends TalosAPIError {
-  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
-    super(status, body, path, { ...options, code: "payment_error" });
-    this.name = "TalosPaymentError";
-  }
-}
-
-/**
- * 429 — rate limited.
- */
-export class TalosRateLimitError extends TalosAPIError {
-  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
-    super(status, body, path, { ...options, code: "rate_limit_error" });
-    this.name = "TalosRateLimitError";
-  }
-}
-
-/**
- * 5xx — server-side failure.
- */
-export class TalosServerError extends TalosAPIError {
-  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
-    super(status, body, path, { ...options, code: "server_error" });
-    this.name = "TalosServerError";
-  }
-}
-
-/**
- * Transport-level failure (network unreachable, DNS, etc.).
- */
-export class TalosTransportError extends TalosAPIError {
-  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
-    super(status, body, path, { ...options, code: "transport_error" });
-    this.name = "TalosTransportError";
-  }
-}
-
-/**
- * Timeout while waiting for a response.
- */
-export class TalosTimeoutError extends TalosAPIError {
-  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
-    super(status, body, path, { ...options, code: "timeout_error" });
-    this.name = "TalosTimeoutError";
-  }
-}
-
-/**
- * Normalize a non-2xx HTTP response into the proper {@link TalosAPIError}
- * subclass based on the HTTP status code. This is the canonical helper for
- * API consumers who want a single function to turn a `Response` into a typed
- * error with request ID and safe body/data.
- */
-export function createAPIError(
-  status: number,
-  body: string,
-  path: string,
-  options: TalosAPIErrorOptions = {},
-): TalosAPIError {
-  switch (status) {
-    case 400:
-      return new TalosValidationError(status, body, path, [], options);
-    case 401:
-      return new TalosAuthenticationError(status, body, path, options);
-    case 402:
-      return new TalosPaymentError(status, body, path, options);
-    case 403:
-      return new TalosForbiddenError(status, body, path, options);
-    case 404:
-      return new TalosNotFoundError(status, body, path, options);
-    case 409:
-      return new TalosConflictError(status, body, path, options);
-    case 429:
-      return new TalosRateLimitError(status, body, path, options);
-    default:
-      if (status >= 500) return new TalosServerError(status, body, path, options);
-      return new TalosAPIError(status, body, path, options);
-  }
-}
-
-/**
- * Typed wrapper for paginated list endpoints. Contains the current page items
- * plus cursor metadata for fetching the next page.
- */
-export interface Paginated<T> {
-  items: T[];
-  nextCursor?: string | null;
-  hasMore: boolean;
-  total?: number;
-}
-
-/**
- * Parse a raw JSON response body into a {@link Paginated} object. The body is
- * expected to be either `{ "items": T[], "nextCursor": string|null, "total": number }`
- * or an array of items (in which case `hasMore` is `false` and `nextCursor` is `null`).
- */
-export function parsePaginated<T>(body: string): Paginated<T> {
-  const data = JSON.parse(body) as unknown;
-  if (Array.isArray(data)) {
-    return { items: data as T[], nextCursor: null, hasMore: false };
-  }
-  const obj = data as Record<string, unknown>;
-  const items = Array.isArray(obj.items) ? (obj.items as T[]) : [];
-  const nextCursor = typeof obj.nextCursor === "string" ? obj.nextCursor : null;
-  const hasMore = typeof obj.hasMore === "boolean" ? obj.hasMore : nextCursor != null;
-  const total = typeof obj.total === "number" ? obj.total : undefined;
-  return { items, nextCursor, hasMore, total };
-}
- });
-    this.name = "TalosAuthenticationError";
-  }
-}
-
 /** 403 — credentials supplied but rejected. */
 export class TalosForbiddenError extends TalosAPIError {
   constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
@@ -747,143 +601,86 @@ export function classifyTransportError(
 }
 
 /**
- * Opaque cursor value used by cursor-paginated list endpoints.
+ * Typed result wrapper for cursor-paginated list endpoints.
+ *
+ * `items` holds the current page. `nextCursor` is an opaque value to pass
+ * to the next request, or `null` when there are no more pages. `hasMore`
+ * is the server-provided flag when available, otherwise it is derived from
+ * the presence of `nextCursor`.
  */
-export type Cursor = string | null;
-
-/**
- * Cursor metadata returned by cursor-paginated list endpoints.
- */
-export interface CursorMetadata {
-  /** Opaque cursor for the next page, or `null` when there are no more pages. */
-  next: Cursor;
-  /** Opaque cursor for the previous page, or `null` at the first page. */
-  prev: Cursor;
+export interface TalosPage<T> {
+  readonly items: T[];
+  readonly nextCursor?: string | null;
+  readonly hasMore: boolean;
 }
 
 /**
- * Typed result wrapper for list endpoints.
+ * Build a {@link TalosPage} manually from items and an optional cursor.
+ * Useful for SDK callers that assemble pages from alternate list payloads
+ * or for tests/fixtures.
  */
-export interface PageResult<T> {
-  /** Items in the current page. */
-  data: T[];
-  /** Cursor metadata for requesting adjacent pages. */
-  page: CursorMetadata;
-}
-
-/**
- * Normalize a raw list response into a {@link PageResult}. Accepts `{ data }`
- * or `{ items }` payloads and extracts `next`/`prev` cursor metadata from
- * `page`, `pagination`, or top-level cursor fields.
- */
-export function toPageResult<T>(raw: unknown): PageResult<T> {
-  const source = (raw ?? {}) as Record<string, unknown>;
-  const data = Array.isArray(source.data)
-    ? (source.data as T[])
-    : Array.isArray(source.items)
-      ? (source.items as T[])
-      : [];
-  const pageSource = (source.page ?? source.pagination ?? {}) as Record<string, unknown>;
-  const next =
-    pageSource.next ?? pageSource.nextCursor ?? pageSource.next_cursor ??
-    source.nextCursor ?? source.next_cursor ?? null;
-  const prev =
-    pageSource.prev ?? pageSource.previousCursor ?? pageSource.prev_cursor ??
-    source.previousCursor ?? source.prev_cursor ?? null;
+export function page<T>(items: T[], nextCursor?: string | null): TalosPage<T> {
   return {
-    data,
-    page: {
-      next: typeof next === "string" ? next : null,
-      prev: typeof prev === "string" ? prev : null,
-    },
+    items,
+    nextCursor: nextCursor ?? null,
+    hasMore: nextCursor != null && nextCursor.length > 0,
   };
 }
 
 /**
- * Type guard for errors thrown by {@link TalosClient} (or built by
- * {@link errorFromResponse} / {@link classifyTransportError}).
+ * Parse a list response body into a {@link TalosPage}. The default keys
+ * match Talos list endpoints (`items`, `nextCursor`, `hasMore`); custom
+ * keys can be supplied for proxies/gateways that use different names.
  */
-export function isTalosAPIError(error: unknown): error is TalosAPIError {
-  return error instanceof TalosAPIError;
-}
+export function parsePage<T>(
+  body: unknown,
+  options: {
+    itemsKey?: string;
+    cursorKey?: string;
+    hasMoreKey?: string;
+    isItem?: (value: unknown) => value is T;
+  } = {},
+): TalosPage<T> {
+  const record = isRecord(body);
+  if (!record) return page<T>([], null);
 
-/** Extract the HTTP status from an SDK error, if it is one. */
-export function errorStatus(error: unknown): number | undefined {
-  return isTalosAPIError(error) ? error.status : undefined;
-}
+  const itemsKey = options.itemsKey ?? "items";
+  const cursorKey = options.cursorKey ?? "nextCursor";
+  const hasMoreKey = options.hasMoreKey ?? "hasMore";
+  const validator = options.isItem;
 
-/** Extract the request ID from an SDK error, if present. */
-export function errorRequestId(error: unknown): string | undefined {
-  return isTalosAPIError(error) ? error.requestId : undefined;
+  const rawItems = record[itemsKey];
+  const items = Array.isArray(rawItems)
+    ? validator
+      ? rawItems.filter(validator)
+      : (rawItems as T[])
+    : [];
+
+  const rawCursor = record[cursorKey];
+  const nextCursor =
+    typeof rawCursor === "string" && rawCursor.length > 0 ? rawCursor : null;
+
+  const rawHasMore = record[hasMoreKey];
+  const hasMore =
+    typeof rawHasMore === "boolean" ? rawHasMore : nextCursor != null;
+
+  return { items, nextCursor, hasMore };
 }
 
 /**
- * Opaque cursor value used by cursor-paginated list endpoints.
+ * Read a non-2xx `Response` and normalize it into a {@link TalosAPIError}.
+ * Convenience wrapper around {@link errorFromResponse} for callers that
+ * already hold a `fetch` `Response` object.
  */
-export type Cursor = string | null;
-
-/**
- * Cursor metadata returned by cursor-paginated list endpoints.
- */
-export interface CursorMetadata {
-  /** Opaque cursor for the next page, or `null` when there are no more pages. */
-  next: Cursor;
-  /** Opaque cursor for the previous page, or `null` at the first page. */
-  prev: Cursor;
+export async function errorFromFetchResponse(
+  response: Response,
+  path: string,
+): Promise<TalosAPIError> {
+  const rawBody = await response.text();
+  return errorFromResponse(response.status, path, rawBody, response.headers);
 }
 
-/**
- * Typed result wrapper for list endpoints.
- */
-export interface PageResult<T> {
-  /** Items in the current page. */
-  data: T[];
-  /** Cursor metadata for requesting adjacent pages. */
-  page: CursorMetadata;
-}
-
-/**
- * Normalize a raw list response into a {@link PageResult}. Accepts `{ data }`
- * or `{ items }` payloads and extracts `next`/`prev` cursor metadata from
- * `page`, `pagination`, or top-level cursor fields.
- */
-export function toPageResult<T>(raw: unknown): PageResult<T> {
-  const source = (raw ?? {}) as Record<string, unknown>;
-  const data = Array.isArray(source.data)
-    ? (source.data as T[])
-    : Array.isArray(source.items)
-      ? (source.items as T[])
-      : [];
-  const pageSource = (source.page ?? source.pagination ?? {}) as Record<string, unknown>;
-  const next =
-    pageSource.next ?? pageSource.nextCursor ?? pageSource.next_cursor ??
-    source.nextCursor ?? source.next_cursor ?? null;
-  const prev =
-    pageSource.prev ?? pageSource.previousCursor ?? pageSource.prev_cursor ??
-    source.previousCursor ?? source.prev_cursor ?? null;
-  return {
-    data,
-    page: {
-      next: typeof next === "string" ? next : null,
-      prev: typeof prev === "string" ? prev : null,
-    },
-  };
-}
-
-/**
- * Type guard for errors thrown by {@link TalosClient} (or built by
- * {@link errorFromResponse} / {@link classifyTransportError}).
- */
-export function isTalosAPIError(error: unknown): error is TalosAPIError {
-  return error instanceof TalosAPIError;
-}
-
-/** Extract the HTTP status from an SDK error, if it is one. */
-export function errorStatus(error: unknown): number | undefined {
-  return isTalosAPIError(error) ? error.status : undefined;
-}
-
-/** Extract the request ID from an SDK error, if present. */
-export function errorRequestId(error: unknown): string | undefined {
-  return isTalosAPIError(error) ? error.requestId : undefined;
+/** Internal type guard for JSON object bodies. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
