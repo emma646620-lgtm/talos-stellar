@@ -121,22 +121,22 @@ export function getTalosErrorMessage(error: unknown): string {
 /**
  * Returns the items from a {@link CursorPage}.
  */
-export function getPageItems<T>(page: CursorPage<T>): T[] {
-  return (page as any).items ?? [];
+export function getPageItems<T>(page: PaginatedResponse<T>): T[] {
+  return page.items ?? [];
 }
 
 /**
  * Returns the next cursor from a {@link CursorPage}, or `null` if there are no
  * more pages.
  */
-export function getPageNextCursor<T>(page: CursorPage<T>): string | null {
-  return (page as any).nextCursor ?? null;
+export function getPageNextCursor<T>(page: PaginatedResponse<T>): string | null {
+  return page.nextCursor ?? null;
 }
 
 /**
  * Returns whether a {@link CursorPage} has another page to load.
  */
-export function pageHasMore<T>(page: CursorPage<T>): boolean {
+export function pageHasMore<T>(page: PaginatedResponse<T>): boolean {
   return getPageNextCursor(page) != null;
 }
 
@@ -145,16 +145,16 @@ export function pageHasMore<T>(page: CursorPage<T>): boolean {
  * Follows `nextCursor` until it is `null`/`undefined`.
  */
 export async function* paginate<T>(
-  fetchPage: (cursor?: string) => Promise<CursorPage<T>>,
+  fetchPage: (cursor?: string) => Promise<PaginatedResponse<T>>,
 ): AsyncGenerator<T> {
   let cursor: string | undefined;
   do {
     const page = await fetchPage(cursor);
-    const items = (page as any).items ?? [];
+    const items = page.items ?? [];
     for (const item of items) {
       yield item;
     }
-    cursor = (page as any).nextCursor ?? undefined;
+    cursor = page.nextCursor ?? undefined;
   } while (cursor);
 }
 
