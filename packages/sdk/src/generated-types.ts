@@ -3,6 +3,83 @@
  * Do not make direct changes to the file.
  */
 
+export type CursorPage<T> = components["schemas"]["CursorPage"] & {
+  data: T[];
+};
+
+export type ApiResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: TalosApiError };
+
+export type ListResult<T> = ApiResult<CursorPage<T>>;
+
+/**
+ * Normalized API error with HTTP status and optional request ID.
+ */
+export class TalosApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+    readonly requestId?: string,
+    readonly issues?: string[],
+  ) {
+    super(message);
+    this.name = "TalosApiError";
+  }
+}
+
+export function isTalosApiError(error: unknown): error is TalosApiError {
+  return error instanceof TalosApiError;
+}
+
+export function toApiError(error: unknown, requestId?: string): TalosApiError {
+  if (isTalosApiError(error)) return error;
+  if (error instanceof Error) {
+    return new TalosApiError(0, error.message, requestId);
+  }
+  if (typeof error === "object" && error !== null) {
+    const candidate = error as { status?: unknown; error?: unknown };
+    const status = typeof candidate.status === "number" ? candidate.status : 0;
+    const message =
+      typeof candidate.error === "string" ? candidate.error : String(error);
+    return new TalosApiError(status, message, requestId);
+  }
+  return new TalosApiError(0, String(error), requestId);
+}
+
+export async function parseApiError(response: {
+  status: number;
+  statusText: string;
+  headers: { get(name: string): string | null };
+  json(): Promise<unknown>;
+}): Promise<TalosApiError> {
+  const requestId =
+    response.headers.get("x-request-id") ??
+    response.headers.get("x-request") ??
+    undefined;
+  try {
+    const body = (await response.json()) as {
+      error?: unknown;
+      issues?: unknown;
+    };
+    const issues = Array.isArray(body.issues)
+      ? body.issues.filter((issue): issue is string => typeof issue === "string")
+      : undefined;
+    return new TalosApiError(
+      response.status,
+      typeof body.error === "string" ? body.error : response.statusText,
+      requestId,
+      issues,
+    );
+  } catch {
+    return new TalosApiError(
+      response.status,
+      response.statusText || `Request failed with status ${response.status}`,
+      requestId,
+    );
+  }
+}
+
 export interface paths {
     "/api/talos": {
         parameters: {
