@@ -325,3 +325,21 @@ export interface TransferResponse {
   amount: number;
   txHash: string;
 }
+
+export class ApiError extends Error {
+  readonly status?: number;
+  readonly requestId?: string;
+  readonly body?: unknown;
+
+  constructor(message: string, options?: { status?: number; requestId?: string; body?: unknown }) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = options?.status;
+    this.requestId = options?.requestId;
+    this.body = options?.body;
+  }
+}
+
+export function isApiError(error: unknown): error is ApiError {
+  return error instanceof ApiError;
+}
