@@ -1,4 +1,4 @@
-// -- Request types --------------------------------------------------------------------------------------------------------------------
+// ── Request types ────────────────────────────────────────────────
 
 export interface CreateTalosParams {
   name: string;
@@ -137,7 +137,7 @@ export interface TransferParams {
   amount: number;
 }
 
-// -- Response types --------------------------------------------------------------------------------------------------------------------
+// ── Response types ───────────────────────────────────────────────
 
 export interface Talos {
   id: string;
@@ -304,11 +304,6 @@ export interface PaginatedResponse<T> {
   nextCursor: string | null;
 }
 
-export interface Page<T> {
-  items: T[];
-  nextCursor: string | null;
-}
-
 export type CursorPage<T> = PaginatedResponse<T>;
 
 export interface Wallet {
@@ -331,17 +326,32 @@ export interface TransferResponse {
   txHash: string;
 }
 
-export class ApiError extends Error {
-  readonly status?: number;
-  readonly requestId?: string;
-  readonly body?: unknown;
+// ── Error types ─────────────────────────────────────────────────
 
-  constructor(message: string, options?: { status?: number; requestId?: string; body?: unknown }) {
-    super(message);
+export interface ApiErrorPayload {
+  status: number;
+  requestId: string;
+  message: string;
+  details?: unknown;
+}
+
+export interface ApiErrorBody {
+  message?: string;
+  requestId?: string;
+  details?: unknown;
+}
+
+export class ApiError extends Error {
+  public readonly status: number;
+  public readonly requestId: string;
+  public readonly details?: unknown;
+
+  constructor(payload: ApiErrorPayload) {
+    super(payload.message);
     this.name = 'ApiError';
-    this.status = options?.status;
-    this.requestId = options?.requestId;
-    this.body = options?.body;
+    this.status = payload.status;
+    this.requestId = payload.requestId;
+    this.details = payload.details;
   }
 }
 
@@ -349,32 +359,15 @@ export function isApiError(error: unknown): error is ApiError {
   return error instanceof ApiError;
 }
 
-export async function toApiError(response: Response): Promise<ApiError> {
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
-    body = undefined;
-  }
-  return new ApiError(`Request failed with status ${response.status}`, {
-    status: response.status,
-    requestId: response.headers.get('x-request-id') ?? undefined,
-    body,
+export function normalizeApiError(status: number, body: unknown, requestId?: string): ApiError {
+  const message =
+    typeof body === 'object' && body !== null && 'message' in body
+      ? String((body as ApiErrorBody).message ?? 'Request failed')
+      : 'Request failed';
+  return new ApiError({
+    status,
+    requestId: requestId ?? '',
+    message,
+    details: body,
   });
-}
-
-export async function parsePage<T>(response: Response): Promise<Page<T>> {
-  if (!response.ok) {
-    throw await toApiError(response);
-  }
-  const payload: unknown = await response.json();
-  if (typeof payload !== 'object' || payload === null) {
-    return { items: [], nextCursor: null };
-  }
-  const p = payload as Record<string, unknown>;
-  const items = Array.isArray(p.items) ? (p.items as T[]) : Array.isArray(p.data) ? (p.data as T[]) : [];
-  return {
-    items,
-    nextCursor: typeof p.nextCursor === 'string' ? p.nextCursor : null,
-  };
 }
