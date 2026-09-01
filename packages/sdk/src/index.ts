@@ -1,17 +1,5 @@
-// ── Client ────────────────────────────────────────────────────────
-
 export { TalosClient } from "./client.js";
-export type {
-  TalosClientOptions,
-  RetryOptions,
-  TalosErrorEvent,
-} from "./client.js";
-
-// ── Errors (typed hierarchy) ──────────────────────────────────────
-//
-// Re-export the existing `TalosAPIError` alias so legacy imports keep
-// working, then publish the full hierarchy for callers that want to catch
-// specific failure modes.
+export type { TalosClientOptions, RetryOptions, TalosErrorEvent } from "./client.js";
 export { TalosAPIError } from "./errors.js";
 export type { TalosAPIErrorOptions, TalosErrorCode } from "./errors.js";
 export {
@@ -35,13 +23,7 @@ export {
   parseX402Challenge,
   MAX_BODY_BYTES,
 } from "./errors.js";
-
-// ── Domain types ──────────────────────────────────────────────────
-
 export * from "./types.js";
-
-// ── Stellar helpers ───────────────────────────────────────────────
-
 export * from "./stellar.js";
 export * from "./webhooks.js";
 export * from "./a2a-intent.js";
@@ -61,3 +43,7 @@ export type {
   TalosEventStreamOptions,
   SeenStore,
 } from "./events.js";
+// Pagination wrappers
+export interface TalosPage<T> { items: T[]; nextCursor: string | null; prevCursor: string | null; hasMore: boolean; total?: number; }
+export type TalosListResult<T> = TalosPage<T>;
+export function createEmptyPage<T>(): TalosPage<T> { return { items: [], nextCursor: null, prevCursor: null, hasMore: false }; }
