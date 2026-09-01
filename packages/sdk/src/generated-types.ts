@@ -80,6 +80,17 @@ export async function parseApiError(response: {
   }
 }
 
+/**
+ * Parse a paginated list response into a typed `ListResult<T>`.
+ *
+ * @example
+ * const result = await parseListResponse<Talos>(response);
+ * if (result.ok) {
+ *   console.log(result.data.data, result.data.nextCursor);
+ * } else {
+ *   console.error(result.error.status, result.error.requestId);
+ * }
+ */
 export async function parseListResponse<T>(
   response: Parameters<typeof parseApiError>[0],
 ): Promise<ListResult<T>> {
@@ -96,9 +107,13 @@ export async function parseListResponse<T>(
       },
     };
   } catch {
+    const requestId =
+      response.headers.get("x-request-id") ??
+      response.headers.get("x-request") ??
+      undefined;
     return {
       ok: false,
-      error: new TalosApiError(0, "Response contained malformed JSON"),
+      error: new TalosApiError(0, "Response contained malformed JSON", requestId),
     };
   }
 }
