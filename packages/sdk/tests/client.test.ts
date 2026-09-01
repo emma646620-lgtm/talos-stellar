@@ -47,6 +47,19 @@ describe("TalosClient - Request/Response Behavior", () => {
       expect(result).toEqual(mockData);
     });
 
+    it("should handle an empty page with null cursor", async () => {
+      const mockData = { data: [], nextCursor: null };
+      vi.mocked(fetch).mockResolvedValue({
+        ok: true,
+        json: async () => mockData,
+      } as Response);
+
+      const result = await client.listTaloses({ limit: 10 });
+
+      expect(fetch).toHaveBeenCalledWith("http://localhost:3000/api/talos?limit=10", expect.any(Object));
+      expect(result).toEqual(mockData);
+    });
+
     it("should get talos detail", async () => {
       const mockData = { id: "1", name: "Talos 1" };
       vi.mocked(fetch).mockResolvedValue({
