@@ -219,6 +219,17 @@ jobs:
           cd ${{ github.workspace }}
           pnpm --dir packages/sdk exec vitest run
 
+      - name: Verify SDK pagination/error test scenarios
+        run: |
+          cd ${{ github.workspace }}
+          for scenario in "successful page" "empty page" "malformed JSON" "network fail"; do
+            grep -RIqi "$scenario" packages/sdk --include="*.test.ts" --include="*.spec.ts" \
+              --exclude-dir=node_modules --exclude-dir=dist || {
+                echo "Missing SDK test scenario: $scenario"
+                exit 1
+              }
+          done
+
       - name: Verify SDK public API declarations
         run: |
           cd ${{ github.workspace }}
@@ -235,6 +246,8 @@ jobs:
           cd ${{ github.workspace }}
           grep -q "PaginatedResult" packages/sdk/README.md
           grep -q "ApiError" packages/sdk/README.md
+          grep -q "cursor" packages/sdk/README.md
+          grep -q "requestId" packages/sdk/README.md
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
