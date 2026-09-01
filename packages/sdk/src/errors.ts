@@ -556,6 +556,7 @@ export function errorFromResponse(
         headers: safeHeaders,
         requestId,
         data,
+        retryAfterMs: parseRetryAfter(safeHeaders["retry-after"]),
       });
     default:
       if (status >= 500) {
@@ -587,14 +588,14 @@ export function classifyTransportError(
   const message = (cause as { message?: string } | null)?.message ?? String(cause ?? "");
   // AbortError covers timeouts, manual cancels, and signal-driven aborts.
   if (name === "AbortError" || message.toLowerCase().includes("aborted")) {
-    return new TalosTimeoutError(0, truncate(message), path, { message });
+    return new TalosTimeoutError(0, truncate(message), path, { message, cause });
   }
   if (
     name === "TimeoutError" ||
     message.toLowerCase().includes("timeout") ||
     message.toLowerCase().includes("timed out")
   ) {
-    return new TalosTimeoutError(0, truncate(message), path, { message });
+    return new TalosTimeoutError(0, truncate(message), path, { message, cause });
   }
   const safeBody = truncate(message.replace(/\s+/g, " ").trim());
   return new TalosTransportError(0, safeBody, path, { message, cause });
