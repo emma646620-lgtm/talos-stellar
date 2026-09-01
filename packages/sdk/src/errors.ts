@@ -641,7 +641,15 @@ export function parsePage<T>(
     isItem?: (value: unknown) => value is T;
   } = {},
 ): TalosPage<T> {
-  const record = isRecord(body);
+  let parsedBody: unknown = body;
+  if (typeof parsedBody === "string") {
+    try {
+      parsedBody = JSON.parse(parsedBody) as unknown;
+    } catch {
+      return page<T>([], null);
+    }
+  }
+  const record = isRecord(parsedBody);
   if (!record) return page<T>([], null);
 
   const itemsKey = options.itemsKey ?? "items";
@@ -676,7 +684,12 @@ export async function errorFromFetchResponse(
   response: Response,
   path: string,
 ): Promise<TalosAPIError> {
-  const rawBody = await response.text();
+  let rawBody: string;
+  try {
+    rawBody = await response.text();
+  } catch (cause) {
+    return classifyTransportError(cause, path);
+  }
   return errorFromResponse(response.status, path, rawBody, response.headers);
 }
 
