@@ -214,6 +214,11 @@ jobs:
           cd ${{ github.workspace }}
           pnpm --filter @talos-protocol/sdk build
 
+      - name: Run SDK tests
+        run: |
+          cd ${{ github.workspace }}
+          pnpm --dir packages/sdk exec vitest run
+
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
         if: inputs.sign_artifacts != false
