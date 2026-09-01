@@ -113,7 +113,7 @@ export async function parseListResponse<T>(
       undefined;
     return {
       ok: false,
-      error: new TalosApiError(0, "Response contained malformed JSON", requestId),
+      error: new TalosApiError(response.status, "Response contained malformed JSON", requestId),
     };
   }
 }
