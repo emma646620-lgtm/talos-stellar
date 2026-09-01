@@ -225,12 +225,16 @@ jobs:
           for name in TalosClient PaginatedResult ApiError; do
             grep -Rq "$name" packages/sdk/dist --include="*.d.ts" || { echo "Missing SDK export: $name"; exit 1; }
           done
+          for pattern in "cursor" "requestId" "status"; do
+            grep -Rqi "$pattern" packages/sdk/dist --include="*.d.ts" || { echo "Missing SDK type member: $pattern"; exit 1; }
+          done
           echo "SDK public API declarations OK"
 
       - name: Verify SDK README usage example
         run: |
           cd ${{ github.workspace }}
           grep -q "PaginatedResult" packages/sdk/README.md
+          grep -q "ApiError" packages/sdk/README.md
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
