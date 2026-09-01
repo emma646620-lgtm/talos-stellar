@@ -23,7 +23,6 @@ import type {
   CreatePlaybookParams,
   TransferParams,
   TransferResponse,
-  PaginatedResponse,
   CursorPage,
   CursorRequestOptions,
   ActivityPage,
