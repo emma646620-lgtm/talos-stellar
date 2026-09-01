@@ -35,6 +35,15 @@ import {
   type RequestSigner,
   type SigningControllerOptions,
 } from "./signing.js";
+import { TalosAPIError } from "./errors.js";
+export type {
+  CursorPage,
+  CursorRequestOptions,
+  ActivityPage,
+  ActivityPageOptions,
+  PaginatedResponse,
+} from "./types.js";
+export { TalosAPIError };
 
 export interface RetryPolicyOptions {
   maxAttempts?: number;
@@ -46,6 +55,13 @@ export interface RetryPolicyOptions {
   random?: () => number;
 }
 
+export interface WriteOptions {
+  /** Idempotency key for safe retries. */
+  idempotencyKey?: string;
+  /** Abort signal. */
+  signal?: AbortSignal;
+}
+
 export interface TalosClientOptions {
   /** Base URL of the Talos API. Defaults to `https://talos-stellar.vercel.app`. */
   baseUrl?: string;
@@ -54,6 +70,10 @@ export interface TalosClientOptions {
   /** Opt-in request signer. Omitting it preserves the legacy wire format. */
   signer?: RequestSigner;
   signing?: SigningControllerOptions;
+  /** Retry policy for idempotent requests. */
+  retryPolicy?: RetryPolicyOptions;
+  /** Custom fetch implementation for tests / middleware. */
+  fetch?: typeof fetch;
 }
 
 /** Structured event emitted to {@link TalosClientOptions.onError}. */
@@ -65,18 +85,7 @@ export interface TalosErrorEvent {
   durationMs: number;
 }
 
-/** Default retry bounds. Conservative — well within RFC 7231 guidance. */
-const DEFAULT_RETRY: Required<RetryOptions> = {
-  maxAttempts: 1,
-  idempotentOnly: true,
-  maxRetryAfterMs: 60_000,
-  baseDelayMs: 500,
-  maxDelayMs: 8_000,
-  jitter: 0.25,
-  onRetry: () => {
-    /* default: no-op observer */
-  },
-};
+
 
 /** Methods considered safe to retry without further confirmation from the caller. */
 const IDEMPOTENT_METHODS = new Set(["GET", "HEAD"]);
@@ -113,6 +122,8 @@ export class TalosClient {
   private baseUrl: string;
   private headers: Record<string, string>;
   private signer?: SigningController;
+  private retryPolicy: Required<RetryPolicyOptions>;
+  private fetchOverride?: typeof fetch;
 
   constructor(options: TalosClientOptions = {}) {
     const normalizedRetryMethods = options.retryPolicy?.retryMethods?.map(
@@ -139,6 +150,7 @@ export class TalosClient {
       options.baseUrl ?? "https://talos-stellar.vercel.app"
     ).replace(/\/$/, "");
     this.headers = { "Content-Type": "application/json" };
+    this.fetchOverride = options.fetch;
     if (options.apiKey) {
       this.headers["Authorization"] = `Bearer ${options.apiKey}`;
     }
@@ -261,16 +273,45 @@ export class TalosClient {
         "X-Talos-Signature": encodeSignature(signed.signature),
       });
     }
-    const res = await fetch(url, {
-      ...init,
-      headers,
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new TalosAPIError(res.status, body, path);
+    let res: Response;
+    try {
+      res = await this.resolveFetch()(url, {
+        ...requestInit,
+        headers,
+        signal,
+      });
+    } catch (cause) {
+      throw new TalosAPIError(
+        0,
+        `Network request failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+        path,
+      );
     }
-
-    throw new Error("Unexpected retry failure");
+    const text = await res.text();
+    let parsed: unknown;
+    if (text) {
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        if (!res.ok) {
+          parsed = text;
+        } else {
+          const requestId = res.headers.get("x-request-id") ?? undefined;
+          const error = new TalosAPIError(0, `Malformed JSON response: ${text}`, path);
+          (error as any).requestId = requestId;
+          throw error;
+        }
+      }
+    } else {
+      parsed = undefined;
+    }
+    if (!res.ok) {
+      const requestId = res.headers.get("x-request-id") ?? undefined;
+      const error = new TalosAPIError(res.status, parsed, path);
+      (error as any).requestId = requestId;
+      throw error;
+    }
+    return parsed as T;
   }
 
   private async requestPage<T>(
@@ -315,6 +356,7 @@ export class TalosClient {
   async reportActivity(
     talosId: string,
     params: ReportActivityParams,
+    options?: WriteOptions,
   ): Promise<Activity> {
     return this.request(`/api/talos/${talosId}/activity`, {
       method: "POST",
@@ -333,6 +375,7 @@ export class TalosClient {
   async reportRevenue(
     talosId: string,
     params: ReportRevenueParams,
+    options?: WriteOptions,
   ): Promise<Revenue> {
     return this.request(`/api/talos/${talosId}/revenue`, {
       method: "POST",
@@ -351,6 +394,7 @@ export class TalosClient {
   async createApproval(
     talosId: string,
     params: CreateApprovalParams,
+    options?: WriteOptions,
   ): Promise<Approval> {
     return this.request(`/api/talos/${talosId}/approvals`, {
       method: "POST",
@@ -403,7 +447,13 @@ export class TalosClient {
     params: PurchaseServiceParams,
     options?: WriteOptions,
   ): Promise<CommerceJob> {
-    return this.request(`/api/talos/${talosId}/service`, {
+    return this.request(`/api/talos/${talosId}/purchase`, {
+      method: "POST",
+      body: JSON.stringify(params),
+      idempotencyKey: options?.idempotencyKey,
+      signal: options?.signal,
+    });
+  }urn this.request(`/api/talos/${talosId}/service`, {
       method: "POST",
       body: JSON.stringify({ payload: params.payload }),
       headers: { "X-PAYMENT": params.paymentHeader },
