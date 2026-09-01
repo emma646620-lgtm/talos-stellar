@@ -85,6 +85,79 @@ export interface TalosErrorEvent {
   durationMs: number;
 }
 
+/**
+ * Type guard for normalized Talos API errors.
+ */
+export function isTalosAPIError(error: unknown): error is TalosAPIError {
+  return error instanceof TalosAPIError;
+}
+
+/**
+ * Returns the HTTP status of a Talos API error, or `undefined` if the value
+ * is not a Talos API error.
+ */
+export function getTalosErrorStatus(error: unknown): number | undefined {
+  return isTalosAPIError(error) ? error.status : undefined;
+}
+
+/**
+ * Returns the request ID attached to a Talos API error, if available.
+ */
+export function getTalosErrorRequestId(error: unknown): string | undefined {
+  return isTalosAPIError(error)
+    ? (error as TalosAPIError & { requestId?: string }).requestId
+    : undefined;
+}
+
+/**
+ * Returns a human-readable message from any thrown value.
+ */
+export function getTalosErrorMessage(error: unknown): string {
+  if (isTalosAPIError(error)) return error.message;
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+/**
+ * Returns the items from a {@link CursorPage}.
+ */
+export function getPageItems<T>(page: CursorPage<T>): T[] {
+  return (page as any).items ?? [];
+}
+
+/**
+ * Returns the next cursor from a {@link CursorPage}, or `null` if there are no
+ * more pages.
+ */
+export function getPageNextCursor<T>(page: CursorPage<T>): string | null {
+  return (page as any).nextCursor ?? null;
+}
+
+/**
+ * Returns whether a {@link CursorPage} has another page to load.
+ */
+export function pageHasMore<T>(page: CursorPage<T>): boolean {
+  return getPageNextCursor(page) != null;
+}
+
+/**
+ * Async generator that yields every item across all pages fetched via `fetchPage`.
+ * Follows `nextCursor` until it is `null`/`undefined`.
+ */
+export async function* paginate<T>(
+  fetchPage: (cursor?: string) => Promise<CursorPage<T>>,
+): AsyncGenerator<T> {
+  let cursor: string | undefined;
+  do {
+    const page = await fetchPage(cursor);
+    const items = (page as any).items ?? [];
+    for (const item of items) {
+      yield item;
+    }
+    cursor = (page as any).nextCursor ?? undefined;
+  } while (cursor);
+}
+
 
 
 /** Methods considered safe to retry without further confirmation from the caller. */
