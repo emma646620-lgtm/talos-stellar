@@ -219,6 +219,19 @@ jobs:
           cd ${{ github.workspace }}
           pnpm --dir packages/sdk exec vitest run
 
+      - name: Verify SDK public API declarations
+        run: |
+          cd ${{ github.workspace }}
+          for name in TalosClient PaginatedResult ApiError; do
+            grep -Rq "$name" packages/sdk/dist --include="*.d.ts" || { echo "Missing SDK export: $name"; exit 1; }
+          done
+          echo "SDK public API declarations OK"
+
+      - name: Verify SDK README usage example
+        run: |
+          cd ${{ github.workspace }}
+          grep -q "PaginatedResult" packages/sdk/README.md
+
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
         if: inputs.sign_artifacts != false
