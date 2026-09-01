@@ -109,7 +109,9 @@ export function sanitizeBody(raw: string | undefined | null): {
 /** Truncate a string to MAX_BODY_BYTES, suffixing with an ellipsis marker. */
 function truncate(s: string): string {
   if (s.length <= MAX_BODY_BYTES) return s;
-  return s.slice(0, MAX_BODY_BYTES) + "…[truncated]";
+  const suffix = "…[truncated]";
+  const keep = Math.max(0, MAX_BODY_BYTES - suffix.length);
+  return s.slice(0, keep) + suffix;
 }
 
 /**
