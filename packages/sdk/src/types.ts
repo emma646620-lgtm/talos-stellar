@@ -1,4 +1,4 @@
-// ── Request types ────────────────────────────────────────────────
+// -- Request types --------------------------------------------------------------------------------------------------------------------
 
 export interface CreateTalosParams {
   name: string;
@@ -137,7 +137,7 @@ export interface TransferParams {
   amount: number;
 }
 
-// ── Response types ───────────────────────────────────────────────
+// -- Response types --------------------------------------------------------------------------------------------------------------------
 
 export interface Talos {
   id: string;
@@ -301,6 +301,11 @@ export interface LeaderboardEntry {
 
 export interface PaginatedResponse<T> {
   data: T[];
+  nextCursor: string | null;
+}
+
+export interface Page<T> {
+  items: T[];
   nextCursor: string | null;
 }
 
