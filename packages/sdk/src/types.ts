@@ -348,3 +348,33 @@ export class ApiError extends Error {
 export function isApiError(error: unknown): error is ApiError {
   return error instanceof ApiError;
 }
+
+export async function toApiError(response: Response): Promise<ApiError> {
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    body = undefined;
+  }
+  return new ApiError(`Request failed with status ${response.status}`, {
+    status: response.status,
+    requestId: response.headers.get('x-request-id') ?? undefined,
+    body,
+  });
+}
+
+export async function parsePage<T>(response: Response): Promise<Page<T>> {
+  if (!response.ok) {
+    throw await toApiError(response);
+  }
+  const payload: unknown = await response.json();
+  if (typeof payload !== 'object' || payload === null) {
+    return { items: [], nextCursor: null };
+  }
+  const p = payload as Record<string, unknown>;
+  const items = Array.isArray(p.items) ? (p.items as T[]) : Array.isArray(p.data) ? (p.data as T[]) : [];
+  return {
+    items,
+    nextCursor: typeof p.nextCursor === 'string' ? p.nextCursor : null,
+  };
+}
