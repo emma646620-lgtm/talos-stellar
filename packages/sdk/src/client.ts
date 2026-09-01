@@ -73,6 +73,10 @@ export function isTalosAPIError(error: unknown): error is TalosAPIError {
   return error instanceof TalosAPIError;
 }
 
+export function isTalosPaymentError(error: unknown): error is TalosPaymentError {
+  return error instanceof TalosPaymentError;
+}
+
 export function getErrorMessage(error: unknown): string {
   if (error instanceof TalosAPIError) return error.message;
   if (error instanceof Error) return error.message;
@@ -87,12 +91,16 @@ export function getErrorStatus(error: unknown): number | undefined {
   return isTalosAPIError(error) ? error.status : undefined;
 }
 
-export function hasNextPage<T>(page: CursorPage<T>): boolean {
+export function hasNextPage(page: { nextCursor?: string | null }): boolean {
   return page.nextCursor != null;
 }
 
-export function getNextCursor<T>(page: CursorPage<T>): string | null {
+export function getNextCursor(page: { nextCursor?: string | null }): string | null {
   return page.nextCursor ?? null;
+}
+
+export function getPageItems<T>(page: { items: T[] }): T[] {
+  return page.items;
 }
 
 export interface RetryPolicyOptions {
@@ -330,7 +338,20 @@ export class TalosClient {
     const body = await res.text();
     const requestId = res.headers.get("x-request-id") ?? undefined;
     if (!res.ok) {
-      throw new TalosAPIError(res.status, body || res.statusText, path, {
+      let errorMessage = body || res.statusText;
+      try {
+        const parsedError = JSON.parse(body);
+        if (
+          parsedError &&
+          typeof parsedError === "object" &&
+          typeof (parsedError as { message?: unknown }).message === "string"
+        ) {
+          errorMessage = (parsedError as { message: string }).message;
+        }
+      } catch {
+        // Body is not JSON; fall back to raw text
+      }
+      throw new TalosAPIError(res.status, errorMessage, path, {
         requestId,
       });
     }
