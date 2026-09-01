@@ -80,6 +80,29 @@ export async function parseApiError(response: {
   }
 }
 
+export async function parseListResponse<T>(
+  response: Parameters<typeof parseApiError>[0],
+): Promise<ListResult<T>> {
+  if (response.status < 200 || response.status >= 300) {
+    return { ok: false, error: await parseApiError(response) };
+  }
+  try {
+    const body = (await response.json()) as CursorPage<T> | null;
+    return {
+      ok: true,
+      data: {
+        nextCursor: body?.nextCursor,
+        data: Array.isArray(body?.data) ? body.data : [],
+      },
+    };
+  } catch {
+    return {
+      ok: false,
+      error: new TalosApiError(0, "Response contained malformed JSON"),
+    };
+  }
+}
+
 export interface paths {
     "/api/talos": {
         parameters: {
