@@ -37,8 +37,32 @@ import {
   type SigningControllerOptions,
 } from "./signing.js";
 import { TalosAPIError, TalosPaymentError } from "./errors.js";
-export { TalosAPIError } from "./errors.js";
+export { TalosAPIError, TalosPaymentError } from "./errors.js";
 export type {
+  Talos,
+  TalosCreated,
+  TalosDetail,
+  CreateTalosParams,
+  ReportActivityParams,
+  Activity,
+  ReportRevenueParams,
+  Revenue,
+  CreateApprovalParams,
+  Approval,
+  RegisterServiceParams,
+  CommerceService,
+  SignPaymentParams,
+  SignedPayment,
+  DiscoverServicesParams,
+  PurchaseServiceParams,
+  CommerceJob,
+  Wallet,
+  WriteOptions,
+  LeaderboardEntry,
+  Playbook,
+  CreatePlaybookParams,
+  TransferParams,
+  TransferResponse,
   PaginatedResponse,
   CursorPage,
   CursorRequestOptions,
@@ -47,6 +71,28 @@ export type {
 } from "./types.js";
 export function isTalosAPIError(error: unknown): error is TalosAPIError {
   return error instanceof TalosAPIError;
+}
+
+export function getErrorMessage(error: unknown): string {
+  if (error instanceof TalosAPIError) return error.message;
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+export function getRequestId(error: unknown): string | undefined {
+  return isTalosAPIError(error) ? error.requestId : undefined;
+}
+
+export function getErrorStatus(error: unknown): number | undefined {
+  return isTalosAPIError(error) ? error.status : undefined;
+}
+
+export function hasNextPage<T>(page: CursorPage<T>): boolean {
+  return page.nextCursor != null;
+}
+
+export function getNextCursor<T>(page: CursorPage<T>): string | null {
+  return page.nextCursor ?? null;
 }
 
 export interface RetryPolicyOptions {
@@ -267,10 +313,20 @@ export class TalosClient {
         "X-Talos-Signature": encodeSignature(signed.signature),
       });
     }
-    const res = await this.resolveFetch()(url, {
-      ...init,
-      headers,
-    });
+    let res: Response;
+    try {
+      res = await this.resolveFetch()(url, {
+        ...init,
+        headers,
+      });
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      throw new TalosAPIError(
+        0,
+        error instanceof Error ? error.message : "Network request failed",
+        path,
+      );
+    }
     const body = await res.text();
     const requestId = res.headers.get("x-request-id") ?? undefined;
     if (!res.ok) {
