@@ -306,6 +306,10 @@ export interface PaginatedResponse<T> {
 
 export type CursorPage<T> = PaginatedResponse<T>;
 
+export type ListResult<T> =
+  | { ok: true; page: CursorPage<T> }
+  | { ok: false; error: ApiError };
+
 export interface Wallet {
   agentWalletId: string;
   agentWalletAddress: string;
@@ -384,4 +388,18 @@ export function normalizeNetworkError(error: unknown, requestId?: string): ApiEr
     message,
     details: error,
   });
+}
+
+export async function apiErrorFromResponse(response: {
+  status: number;
+  headers: { get(name: string): string | null };
+  text(): Promise<string>;
+}): Promise<ApiError> {
+  const requestId = response.headers.get('x-request-id') ?? undefined;
+  const text = await response.text();
+  try {
+    return normalizeApiError(response.status, JSON.parse(text), requestId);
+  } catch {
+    return normalizeApiError(response.status, text, requestId);
+  }
 }
