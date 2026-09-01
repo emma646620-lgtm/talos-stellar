@@ -333,6 +333,152 @@ export class TalosAuthenticationError extends TalosAPIError {
   }
 }
 
+/**
+ * 403 — authenticated but not permitted.
+ */
+export class TalosForbiddenError extends TalosAPIError {
+  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
+    super(status, body, path, { ...options, code: "forbidden" });
+    this.name = "TalosForbiddenError";
+  }
+}
+
+/**
+ * 404 — resource not found.
+ */
+export class TalosNotFoundError extends TalosAPIError {
+  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
+    super(status, body, path, { ...options, code: "not_found_error" });
+    this.name = "TalosNotFoundError";
+  }
+}
+
+/**
+ * 409 — conflict with current state.
+ */
+export class TalosConflictError extends TalosAPIError {
+  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
+    super(status, body, path, { ...options, code: "conflict_error" });
+    this.name = "TalosConflictError";
+  }
+}
+
+/**
+ * 402 — payment required / x402 challenge.
+ */
+export class TalosPaymentError extends TalosAPIError {
+  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
+    super(status, body, path, { ...options, code: "payment_error" });
+    this.name = "TalosPaymentError";
+  }
+}
+
+/**
+ * 429 — rate limited.
+ */
+export class TalosRateLimitError extends TalosAPIError {
+  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
+    super(status, body, path, { ...options, code: "rate_limit_error" });
+    this.name = "TalosRateLimitError";
+  }
+}
+
+/**
+ * 5xx — server-side failure.
+ */
+export class TalosServerError extends TalosAPIError {
+  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
+    super(status, body, path, { ...options, code: "server_error" });
+    this.name = "TalosServerError";
+  }
+}
+
+/**
+ * Transport-level failure (network unreachable, DNS, etc.).
+ */
+export class TalosTransportError extends TalosAPIError {
+  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
+    super(status, body, path, { ...options, code: "transport_error" });
+    this.name = "TalosTransportError";
+  }
+}
+
+/**
+ * Timeout while waiting for a response.
+ */
+export class TalosTimeoutError extends TalosAPIError {
+  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
+    super(status, body, path, { ...options, code: "timeout_error" });
+    this.name = "TalosTimeoutError";
+  }
+}
+
+/**
+ * Normalize a non-2xx HTTP response into the proper {@link TalosAPIError}
+ * subclass based on the HTTP status code. This is the canonical helper for
+ * API consumers who want a single function to turn a `Response` into a typed
+ * error with request ID and safe body/data.
+ */
+export function createAPIError(
+  status: number,
+  body: string,
+  path: string,
+  options: TalosAPIErrorOptions = {},
+): TalosAPIError {
+  switch (status) {
+    case 400:
+      return new TalosValidationError(status, body, path, [], options);
+    case 401:
+      return new TalosAuthenticationError(status, body, path, options);
+    case 402:
+      return new TalosPaymentError(status, body, path, options);
+    case 403:
+      return new TalosForbiddenError(status, body, path, options);
+    case 404:
+      return new TalosNotFoundError(status, body, path, options);
+    case 409:
+      return new TalosConflictError(status, body, path, options);
+    case 429:
+      return new TalosRateLimitError(status, body, path, options);
+    default:
+      if (status >= 500) return new TalosServerError(status, body, path, options);
+      return new TalosAPIError(status, body, path, options);
+  }
+}
+
+/**
+ * Typed wrapper for paginated list endpoints. Contains the current page items
+ * plus cursor metadata for fetching the next page.
+ */
+export interface Paginated<T> {
+  items: T[];
+  nextCursor?: string | null;
+  hasMore: boolean;
+  total?: number;
+}
+
+/**
+ * Parse a raw JSON response body into a {@link Paginated} object. The body is
+ * expected to be either `{ "items": T[], "nextCursor": string|null, "total": number }`
+ * or an array of items (in which case `hasMore` is `false` and `nextCursor` is `null`).
+ */
+export function parsePaginated<T>(body: string): Paginated<T> {
+  const data = JSON.parse(body) as unknown;
+  if (Array.isArray(data)) {
+    return { items: data as T[], nextCursor: null, hasMore: false };
+  }
+  const obj = data as Record<string, unknown>;
+  const items = Array.isArray(obj.items) ? (obj.items as T[]) : [];
+  const nextCursor = typeof obj.nextCursor === "string" ? obj.nextCursor : null;
+  const hasMore = typeof obj.hasMore === "boolean" ? obj.hasMore : nextCursor != null;
+  const total = typeof obj.total === "number" ? obj.total : undefined;
+  return { items, nextCursor, hasMore, total };
+}
+ });
+    this.name = "TalosAuthenticationError";
+  }
+}
+
 /** 403 — credentials supplied but rejected. */
 export class TalosForbiddenError extends TalosAPIError {
   constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
