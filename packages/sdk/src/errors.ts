@@ -670,3 +670,74 @@ export function errorStatus(error: unknown): number | undefined {
 export function errorRequestId(error: unknown): string | undefined {
   return isTalosAPIError(error) ? error.requestId : undefined;
 }
+
+/**
+ * Opaque cursor value used by cursor-paginated list endpoints.
+ */
+export type Cursor = string | null;
+
+/**
+ * Cursor metadata returned by cursor-paginated list endpoints.
+ */
+export interface CursorMetadata {
+  /** Opaque cursor for the next page, or `null` when there are no more pages. */
+  next: Cursor;
+  /** Opaque cursor for the previous page, or `null` at the first page. */
+  prev: Cursor;
+}
+
+/**
+ * Typed result wrapper for list endpoints.
+ */
+export interface PageResult<T> {
+  /** Items in the current page. */
+  data: T[];
+  /** Cursor metadata for requesting adjacent pages. */
+  page: CursorMetadata;
+}
+
+/**
+ * Normalize a raw list response into a {@link PageResult}. Accepts `{ data }`
+ * or `{ items }` payloads and extracts `next`/`prev` cursor metadata from
+ * `page`, `pagination`, or top-level cursor fields.
+ */
+export function toPageResult<T>(raw: unknown): PageResult<T> {
+  const source = (raw ?? {}) as Record<string, unknown>;
+  const data = Array.isArray(source.data)
+    ? (source.data as T[])
+    : Array.isArray(source.items)
+      ? (source.items as T[])
+      : [];
+  const pageSource = (source.page ?? source.pagination ?? {}) as Record<string, unknown>;
+  const next =
+    pageSource.next ?? pageSource.nextCursor ?? pageSource.next_cursor ??
+    source.nextCursor ?? source.next_cursor ?? null;
+  const prev =
+    pageSource.prev ?? pageSource.previousCursor ?? pageSource.prev_cursor ??
+    source.previousCursor ?? source.prev_cursor ?? null;
+  return {
+    data,
+    page: {
+      next: typeof next === "string" ? next : null,
+      prev: typeof prev === "string" ? prev : null,
+    },
+  };
+}
+
+/**
+ * Type guard for errors thrown by {@link TalosClient} (or built by
+ * {@link errorFromResponse} / {@link classifyTransportError}).
+ */
+export function isTalosAPIError(error: unknown): error is TalosAPIError {
+  return error instanceof TalosAPIError;
+}
+
+/** Extract the HTTP status from an SDK error, if it is one. */
+export function errorStatus(error: unknown): number | undefined {
+  return isTalosAPIError(error) ? error.status : undefined;
+}
+
+/** Extract the request ID from an SDK error, if present. */
+export function errorRequestId(error: unknown): string | undefined {
+  return isTalosAPIError(error) ? error.requestId : undefined;
+}
