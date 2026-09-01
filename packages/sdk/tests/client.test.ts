@@ -45,6 +45,7 @@ describe("TalosClient - Request/Response Behavior", () => {
 
       expect(fetch).toHaveBeenCalledWith("http://localhost:3000/api/talos?limit=10&cursor=cursor-123", expect.any(Object));
       expect(result).toEqual(mockData);
+      expect(result.nextCursor).toBe("cursor-123");
     });
 
     it("should handle an empty page with null cursor", async () => {
@@ -58,6 +59,7 @@ describe("TalosClient - Request/Response Behavior", () => {
 
       expect(fetch).toHaveBeenCalledWith("http://localhost:3000/api/talos?limit=10", expect.any(Object));
       expect(result).toEqual(mockData);
+      expect(result.nextCursor).toBeNull();
     });
 
     it("should get talos detail", async () => {
@@ -409,6 +411,20 @@ it("should fetch one activity page with typed cursor response", async () => {
       } as unknown as Response);
 
       await expect(client.getTalos("1")).rejects.toThrow();
+    });
+
+    it("should normalize a malformed JSON error body into TalosAPIError with request ID", async () => {
+      vi.mocked(fetch).mockResolvedValue({
+        ok: false,
+        status: 500,
+        headers: new Headers({ "x-request-id": "req-bad-json" }),
+        text: async () => "<html>Internal Server Error</html>",
+      } as Response);
+
+      const err = await client.getTalos("1").catch((e) => e);
+      expect(err).toBeInstanceOf(TalosAPIError);
+      expect((err as TalosAPIError).status).toBe(500);
+      expect((err as TalosAPIError).requestId).toBe("req-bad-json");
     });
   });
 
@@ -1156,6 +1172,11 @@ describe("Typed SDK Error Hierarchy", () => {
         const err = errorFromResponse(status, "/x", "{}", new Headers());
         expect(err).toBeInstanceOf(klass);
       }
+    });
+
+    it("errorFromResponse includes request ID from headers", () => {
+      const err = errorFromResponse(500, "/x", "{}", new Headers({ "x-request-id": "req-1" }));
+      expect(err.requestId).toBe("req-1");
     });
 
     it("sanitizeBody redacts nested sensitive fields and caps length", () => {
