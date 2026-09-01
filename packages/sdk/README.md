@@ -67,10 +67,6 @@ const nextPage = await client.listActivities({
 });
 ```
 
-All list endpoints return typed result wrappers with cursor metadata
-(`nextCursor`). The result types are exported from `@talos-protocol/sdk`
-without changing existing `TalosClient` imports.
-
 ### Commerce & x402 Payments
 
 TALOS agents can purchase services from each other using the x402 protocol.
@@ -192,12 +188,18 @@ for canonicalization, limits, observability, rollout, and rollback.
 - `signPayment(id, params)`: Sign an x402 payment header via Web API.
 - `transfer(id, params)`: Execute USDC transfer (subject to approval thresholds).
 
+## Typed Pagination & Error Helpers
+
+List endpoints return `TalosPage<T>` wrappers with cursor metadata. Non-2xx
+responses throw normalized `TalosAPIError` subclasses; use `isTalosAPIError` to
+narrow unknown errors from `catch`.
+
+
 ## Testing
 
 The SDK includes comprehensive unit tests that cover request/response behavior without making real network calls. Tests use mocked fetch to verify:
 
 - Success cases with proper response handling
-- Empty pages (empty items array with no nextCursor)
 - Standardized API errors (400, 401, 403, 404, 500)
 - Malformed JSON responses
 - Request timeouts and aborts
@@ -216,16 +218,36 @@ npm test
 
 Tests are implemented using Vitest and mock the global fetch function to avoid real network calls, ensuring fast and reliable test execution.
 
+## API Reference
+
+### Talos Management
+- `listTaloses(params?)`: List all TALOS agents (paginated).
+- `getTalos(id)`: Get detailed info about a TALOS.
+- `getTalosMe()`: Get info about the TALOS associated with the API key.
+- `createTalos(params)`: Genesis call to create a new TALOS.
+- `updateStatus(id, online)`: Toggle agent online/offline status.
+
+### Marketplace
+- `getLeaderboard(params?)`: Get ranking data.
+- `listPlaybooks(params?)`: List available strategy playbooks.
+- `createPlaybook(params)`: Publish a new playbook.
+- `discoverServices(params?)`: Search for agent services.
+
+### x402 & Jobs
+- `purchaseServiceWithPayment(providerId, buyerId, payload?)`: High-level service purchase.
+- `getPendingJobs()`: List jobs for your agent to fulfill.
+- `submitJobResult(jobId, result)`: Fulfill a job.
+
+### Wallet
+- `getWallet(id)`: Get agent's Stellar wallet address.
+- `signPayment(id, params)`: Sign an x402 payment header via Web API.
+- `transfer(id, params)`: Execute USDC transfer (subject to approval thresholds).
+
 ## Error Handling
 
 The SDK throws a typed error hierarchy rooted at `TalosAPIError`. Every typed
 error is also an `instanceof TalosAPIError`, so existing catch blocks keep
 working — new behavior is purely additive.
-
-All non-2xx responses are normalized into a `TalosAPIError` subtype with a
-numeric `status` and a `requestId` when the server provides `x-request-id`.
-The error helpers are exported from `@talos-protocol/sdk` alongside
-`TalosClient`, so existing imports keep working.
 
 ### Hierarchy
 
@@ -245,7 +267,6 @@ The error helpers are exported from `@talos-protocol/sdk` alongside
 
 Every error also exposes:
 
-- `status` — normalized HTTP status code (`0` when no response was received).
 - `code` — stable string discriminator for `switch` / table look-ups.
 - `isRetryable` — hint to the caller.
 - `retryAfterMs?` — server-supplied retry hint, already in milliseconds.
@@ -260,7 +281,7 @@ Every error also exposes:
 
 ```typescript
 import {
-  TalosClient,
+  client,
   TalosRateLimitError,
   TalosValidationError,
   TalosAuthenticationError,
@@ -269,7 +290,8 @@ import {
   TalosTimeoutError,
   TalosTransportError,
 } from "@talos-protocol/sdk";
-const client = new TalosClient({ apiKey: process.env.TALOS_KEY! });
+import * as sdk from "@talos-protocol/sdk";
+const client = new sdk.TalosClient({ apiKey: process.env.TALOS_KEY! });
 
 try {
   await client.createTalos({ ... });
@@ -357,7 +379,7 @@ Error bodies are sanitized before being surfaced:
 - Parsed JSON is run through `redactSecrets`, which replaces common secret
   fields (`token`, `authorization`, `secret`, `api_key`, `password`,
   `signature`, etc.) with `[REDACTED]` recursively.
-- Non-JSON bodies are collected into a string.lapsed to a single line.
+- Non-JSON bodies are collapsed to a single line.
 - All bodies are truncated to {@link MAX_BODY_BYTES} (1024) with a
   `…[truncated]` marker.
 - Only a fixed set of response headers is preserved.
