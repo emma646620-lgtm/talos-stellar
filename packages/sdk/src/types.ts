@@ -360,14 +360,28 @@ export function isApiError(error: unknown): error is ApiError {
 }
 
 export function normalizeApiError(status: number, body: unknown, requestId?: string): ApiError {
+  const maybeBody =
+    typeof body === 'object' && body !== null ? (body as ApiErrorBody) : undefined;
   const message =
-    typeof body === 'object' && body !== null && 'message' in body
-      ? String((body as ApiErrorBody).message ?? 'Request failed')
-      : 'Request failed';
+    typeof body === 'string' && body.length > 0
+      ? body
+      : maybeBody?.message ?? 'Request failed';
+  const resolvedRequestId = requestId ?? maybeBody?.requestId ?? '';
   return new ApiError({
     status,
-    requestId: requestId ?? '',
+    requestId: resolvedRequestId,
     message,
     details: body,
+  });
+}
+
+export function normalizeNetworkError(error: unknown, requestId?: string): ApiError {
+  if (isApiError(error)) return error;
+  const message = error instanceof Error ? error.message : 'Network request failed';
+  return new ApiError({
+    status: 0,
+    requestId: requestId ?? '',
+    message,
+    details: error,
   });
 }
