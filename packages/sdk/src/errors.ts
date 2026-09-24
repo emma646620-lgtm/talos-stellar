@@ -219,6 +219,16 @@ export function parseX402Challenge(header: string | undefined | null): Record<st
 }
 
 /**
+ * Sanitize data for inclusion in TalosAPIError instances.
+ * Applies redaction and ensures the value is serializable.
+ */
+function sanitizeDataForInstance(data: unknown): unknown {
+  if (data == null) return undefined;
+  if (typeof data !== "object") return data;
+  return redactSecrets(data);
+}
+
+/**
  * Base class for all SDK errors. Preserves the legacy
  * `(status, body, path)` constructor signature so existing catch blocks and
  * import sites keep working.
@@ -327,15 +337,25 @@ export class TalosValidationError extends TalosAPIError {
  * TalosAuthenticationError` from silently matching 403 responses.
  */
 export class TalosAuthenticationError extends TalosAPIError {
-  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
+  constructor(
+    status: number,
+    body: string,
+    path: string,
+    options: TalosAPIErrorOptions = {},
+  ) {
     super(status, body, path, { ...options, code: "authentication_error" });
     this.name = "TalosAuthenticationError";
   }
 }
 
-/** 403 — credentials supplied but rejected. */
+/** 403 — credentials present but insufficient permissions. */
 export class TalosForbiddenError extends TalosAPIError {
-  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
+  constructor(
+    status: number,
+    body: string,
+    path: string,
+    options: TalosAPIErrorOptions = {},
+  ) {
     super(status, body, path, { ...options, code: "forbidden" });
     this.name = "TalosForbiddenError";
   }
@@ -343,259 +363,128 @@ export class TalosForbiddenError extends TalosAPIError {
 
 /** 404 — resource not found. */
 export class TalosNotFoundError extends TalosAPIError {
-  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
-    super(status, body, path, options);
+  constructor(
+    status: number,
+    body: string,
+    path: string,
+    options: TalosAPIErrorOptions = {},
+  ) {
+    super(status, body, path, { ...options, code: "not_found_error" });
     this.name = "TalosNotFoundError";
-    // Subclasses can override code via options, but we set the default.
-    if (this.code === "api_error") this.code = "not_found_error";
   }
 }
 
-/** 409 — state conflict (lease, idempotency key, duplicate request). */
+/** 409 — resource conflict (e.g. duplicate key). */
 export class TalosConflictError extends TalosAPIError {
-  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
-    super(status, body, path, options);
+  constructor(
+    status: number,
+    body: string,
+    path: string,
+    options: TalosAPIErrorOptions = {},
+  ) {
+    super(status, body, path, { ...options, code: "conflict_error" });
     this.name = "TalosConflictError";
-    if (this.code === "api_error") this.code = "conflict_error";
   }
 }
 
-/** 402 — payment required (x402 challenge) or generic payment failure. */
+/** 402 — payment required (x402). */
 export class TalosPaymentError extends TalosAPIError {
   public readonly challenge?: Record<string, string>;
-  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
+  constructor(
+    status: number,
+    body: string,
+    path: string,
+    options: TalosAPIErrorOptions = {},
+  ) {
     super(status, body, path, { ...options, code: "payment_error" });
     this.name = "TalosPaymentError";
-    this.challenge = parseX402Challenge(options.headers?.["www-authenticate"]);
+    this.challenge = options.headers?.["www-authenticate"]
+      ? parseX402Challenge(options.headers["www-authenticate"])
+      : undefined;
   }
 }
 
-/** 429 — rate limited. */
+/** 429 — rate limit exceeded. */
 export class TalosRateLimitError extends TalosAPIError {
-  public readonly limit?: number;
-  public readonly remaining?: number;
-  public readonly resetAt?: number;
   constructor(
     status: number,
     body: string,
     path: string,
     options: TalosAPIErrorOptions = {},
   ) {
-    super(status, body, path, {
-      ...options,
-      code: "rate_limit_error",
-      isRetryable: true,
-    });
+    super(status, body, path, { ...options, code: "rate_limit_error", isRetryable: true });
     this.name = "TalosRateLimitError";
-    const limitHeader = options.headers?.["x-ratelimit-limit"];
-    const remainingHeader = options.headers?.["x-ratelimit-remaining"];
-    const resetHeader = options.headers?.["x-ratelimit-reset"];
-    if (limitHeader != null) this.limit = Number(limitHeader);
-    if (remainingHeader != null) this.remaining = Number(remainingHeader);
-    if (resetHeader != null) this.resetAt = Number(resetHeader) * 1000; // server emits seconds
   }
 }
 
-/** 5xx — server returned a non-retryable error (use ServerRetryableError for transient 5xx). */
+/** 5xx — server-side error. */
 export class TalosServerError extends TalosAPIError {
-  constructor(status: number, body: string, path: string, options: TalosAPIErrorOptions = {}) {
-    super(status, body, path, options);
-    this.name = "TalosServerError";
-    if (this.code === "api_error") this.code = "server_error";
-  }
-}
-
-/**
- * 502/503/504 — transient server failure, safe to retry with backoff.
- * Surfaces as the same type as {@link TalosServerError} but with
- * `isRetryable = true`.
- */
-export class TalosServerRetryableError extends TalosServerError {
   constructor(
     status: number,
     body: string,
     path: string,
     options: TalosAPIErrorOptions = {},
   ) {
-    super(status, body, path, { ...options, isRetryable: true });
-    this.name = "TalosServerRetryableError";
+    super(status, body, path, { ...options, code: "server_error" });
+    this.name = "TalosServerError";
   }
 }
 
-/** Status `0` — network/transport failure (DNS, ECONNREFUSED, EOS, etc.). */
+/** Transport-level failure (network down, DNS, etc.). */
 export class TalosTransportError extends TalosAPIError {
   constructor(
-    status: 0,
+    status: number,
     body: string,
     path: string,
     options: TalosAPIErrorOptions = {},
   ) {
-    super(status, body, path, {
-      ...options,
-      code: "transport_error",
-      isRetryable: true,
-    });
+    super(status, body, path, { ...options, code: "transport_error" });
     this.name = "TalosTransportError";
   }
 }
 
-/** Status `0` — timeout or abort. */
+/** Request timed out. */
 export class TalosTimeoutError extends TalosAPIError {
   constructor(
-    status: 0,
+    status: number,
     body: string,
     path: string,
     options: TalosAPIErrorOptions = {},
   ) {
-    super(status, body, path, {
-      ...options,
-      code: "timeout_error",
-      isRetryable: true,
-    });
+    super(status, body, path, { ...options, code: "timeout_error", isRetryable: true });
     this.name = "TalosTimeoutError";
   }
 }
 
 /**
- * Sanitize an `options.data` value into a privacy-safe shape:
- *   - `undefined`/`null` pass through as `undefined`.
- *   - Non-JSON-serializable values return `undefined`.
- *   - Strings, numbers, booleans pass through if their textual length
- *     is `<= MAX_DATA_BYTES`.
- *   - Objects run through {@link redactSecrets} (deep), then get checked
- *     against `MAX_DATA_BYTES` after a dry-run `JSON.stringify` — if too
- *     big, the field is dropped rather than risk an OOM downstream.
+ * Typed pagination result for list endpoints.
  *
- * Kept internal because the consumer does not need to call it directly;
- * the {@link TalosAPIError} constructor applies it.
+ * @typeParam T - The type of items in the list.
  */
-function sanitizeDataForInstance(input: unknown): unknown {
-  if (input === undefined || input === null) return undefined;
-  if (typeof input !== "object") {
-    return typeof input === "string" && input.length > MAX_DATA_BYTES
-      ? undefined
-      : input;
-  }
-  const redacted = redactSecrets(input);
-  try {
-    const serialized = JSON.stringify(redacted);
-    if (serialized.length > MAX_DATA_BYTES) return undefined;
-    return redacted;
-  } catch {
-    return undefined;
-  }
+export interface TalosPaginatedResult<T> {
+  /** The items returned in this page. */
+  data: T[];
+  /** Cursor to fetch the next page. Undefined if no more pages. */
+  nextCursor?: string;
+  /** Total number of items available (if provided by the API). */
+  total?: number;
 }
 
 /**
- * Build the right {@link TalosAPIError} subclass for a given HTTP response.
- * Pure function — kept small so tests can exercise it directly.
+ * Helper to normalize a raw API response into a typed paginated result.
+ *
+ * @param response - The raw response object expected from the API.
+ * @returns A {@link TalosPaginatedResult}.
  */
-export function errorFromResponse(
-  status: number,
-  path: string,
-  rawBody: string,
-  headers: Headers | Record<string, string>,
-): TalosAPIError {
-  const { body, data } = sanitizeBody(rawBody);
-  const safeHeaders = snapshotHeaders(headers);
-  const requestId = safeHeaders["x-request-id"];
-  const issues = Array.isArray((data as { issues?: unknown[] } | undefined)?.issues)
-    ? (((data as { issues: unknown[] }).issues as unknown[]) as unknown[]).filter(
-        (x): x is string => typeof x === "string",
-      )
-    : [];
-
-  switch (status) {
-    case 400:
-      return new TalosValidationError(status, body, path, issues, {
-        headers: safeHeaders,
-        requestId,
-        data,
-      });
-    case 401:
-      return new TalosAuthenticationError(status, body, path, {
-        headers: safeHeaders,
-        requestId,
-        data,
-      });
-    case 402:
-      return new TalosPaymentError(status, body, path, {
-        headers: safeHeaders,
-        requestId,
-        data,
-      });
-    case 403:
-      return new TalosForbiddenError(status, body, path, {
-        headers: safeHeaders,
-        requestId,
-        data,
-      });
-    case 404:
-      return new TalosNotFoundError(status, body, path, {
-        headers: safeHeaders,
-        requestId,
-        data,
-      });
-    case 409:
-      return new TalosConflictError(status, body, path, {
-        headers: safeHeaders,
-        requestId,
-        data,
-      });
-    case 429:
-      return new TalosRateLimitError(status, body, path, {
-        headers: safeHeaders,
-        requestId,
-        data,
-        retryAfterMs: parseRetryAfter(safeHeaders["retry-after"]),
-      });
-    case 502:
-    case 503:
-    case 504:
-      return new TalosServerRetryableError(status, body, path, {
-        headers: safeHeaders,
-        requestId,
-        data,
-      });
-    default:
-      if (status >= 500) {
-        return new TalosServerError(status, body, path, {
-          headers: safeHeaders,
-          requestId,
-          data,
-        });
-      }
-      return new TalosAPIError(status, body, path, {
-        headers: safeHeaders,
-        requestId,
-        data,
-      });
+export function normalizePaginatedResult<T>(response: unknown): TalosPaginatedResult<T> {
+  if (!response || typeof response !== "object") {
+    return { data: [] };
   }
-}
-
-/**
- * Classify a raw error thrown by `fetch` (or its underlying transport) into
- * the appropriate typed error. The original message string is preserved on
- * the `message` property so legacy `rejects.toThrow("…")` patterns keep
- * working.
- */
-export function classifyTransportError(
-  cause: unknown,
-  path: string,
-): TalosTransportError | TalosTimeoutError {
-  const name = (cause as { name?: string } | null)?.name ?? "";
-  const message = (cause as { message?: string } | null)?.message ?? String(cause ?? "");
-  // AbortError covers timeouts, manual cancels, and signal-driven aborts.
-  if (name === "AbortError" || message.toLowerCase().includes("aborted")) {
-    return new TalosTimeoutError(0, truncate(message), path, { message });
-  }
-  if (
-    name === "TimeoutError" ||
-    message.toLowerCase().includes("timeout") ||
-    message.toLowerCase().includes("timed out")
-  ) {
-    return new TalosTimeoutError(0, truncate(message), path, { message });
-  }
-  const safeBody = truncate(message.replace(/\s+/g, " ").trim());
-  return new TalosTransportError(0, safeBody, path, { message, cause });
+  const obj = response as Record<string, unknown>;
+  const data = Array.isArray(obj.data) ? obj.data : [];
+  return {
+    data: data as T[],
+    nextCursor: typeof obj.next_cursor === "string" ? obj.next_cursor : undefined,
+    total: typeof obj.total === "number" ? obj.total : undefined,
+  };
 }

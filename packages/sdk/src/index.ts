@@ -4,8 +4,19 @@ export { TalosClient } from "./client.js";
 export type {
   TalosClientOptions,
   RetryOptions,
+  RetryPolicyOptions,
   TalosErrorEvent,
+  WriteOptions,
 } from "./client.js";
+
+// ── Idempotency ───────────────────────────────────────────────────
+export {
+  generateIdempotencyKey,
+  validateIdempotencyKey,
+  IdempotencyConflictError,
+  isUuidV4,
+  IDEMPOTENCY_KEY_MAX_BYTES,
+} from "./idempotency.js";
 
 // ── Errors (typed hierarchy) ──────────────────────────────────────
 //
@@ -36,6 +47,20 @@ export {
   MAX_BODY_BYTES,
 } from "./errors.js";
 
+// ── Pagination ────────────────────────────────────────────────────
+//
+// Expose typed pagination helpers and result wrappers for API consumers.
+// This allows callers to handle cursor-based pagination with strong typing
+// and access to metadata without manually parsing response headers.
+export {
+  PaginatedResult,
+  CursorPaginationParams,
+  CursorPaginationResponse,
+  createPaginatedResult,
+  parseCursor,
+  encodeCursor,
+} from "./pagination.js";
+
 // ── Domain types ──────────────────────────────────────────────────
 
 export * from "./types.js";
@@ -61,3 +86,9 @@ export type {
   TalosEventStreamOptions,
   SeenStore,
 } from "./events.js";
+export {
+  FaultType,
+  ChaosInjector,
+  ChaosInjectedError,
+  globalChaosInjector,
+} from "./chaos.js";
